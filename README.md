@@ -15,6 +15,7 @@ This project demonstrates how multiple recommendation strategies can be integrat
 - [Project Structure](#project-structure)
 - [Example Recommendation](#example-recommendation)
 - [Model Architecture](#model-architecture)
+- [Overall Architecture](#overall-architecture)
 
 ---
 
@@ -30,11 +31,15 @@ The hybrid system calculates a **weighted score** combining all three approaches
 ---
 
 ## Features
-- Generates personalized movie recommendations for users.
-- Supports **Hybrid**, **NCF**, and **Content-Based** recommendation scores.
-- Preprocessing and handling of user-item matrices and movie metadata.
-- Evaluation using metrics like RMSE, MAE, Precision@K, and Recall@K.
-- Scalable and modular structure for adding more recommendation strategies.
+
+
+-Two-Stage Recommendation Pipeline: Efficient candidate retrieval (ANN) + accurate hybrid ranking
+-Neural Collaborative Filtering: Combines Generalized Matrix Factorization (GMF) + Multi-Layer Perceptron (MLP)
+-Semantic Content Embeddings: TF-IDF + Sentence-BERT for rich item representations
+-FAISS-Powered ANN Search: Sub-millisecond similarity search for scalability
+-Score Explainability: Transparent breakdown of hybrid, NCF, and content scores
+-TMDb Integration: Enriched metadata with movie posters and overviews
+-Interactive UI: Streamlit-based demo for real-time recommendations
 
 ---
 
@@ -57,9 +62,40 @@ python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
 ```
-3.Install dependencies:
+3.Download MovieLens 1M dataset
+```
+#Download from https://grouplens.org/datasets/movielens/1m/
+# Extract files to data/ml-1m/
+mkdir -p data/ml-1m
+# Place ratings.dat and movies.dat in data/ml-1m/
+```
+4.Set up TMDb API key
+```
+#Create .env file
+echo "TMDB_API_KEY=your_api_key_here" > .env
+Training the Model
+bash# Train NCF model and generate all artifacts
+python -m src.train
+# Expected output:
+# ✅ Loaded ratings: (1000209, 4), movies: (3706, 3)
+# 🧠 Building content embeddings...
+# 🚀 Training Neural Collaborative Filtering model...
+# Epoch 9/50: val_rmse: 0.891 - val_loss: 0.873
+# 💾 Saving all artifacts...
+# 🎉 Training complete! Artifacts saved in 'artifacts/'
+```
+5.Install dependencies:
 ```
 pip install -r requirements.txt
+```
+6.Running the Demo
+```
+streamlit run app/streamlit_app.py
+#Navigate to http://localhost:8501 and:
+
+#Select a user ID (users with existing history)
+#Adjust number of recommendations (5-20)
+#Click "✨ Recommend" to see personalized suggestions
 ```
 ## Usage
 
@@ -123,9 +159,164 @@ This output shows the recommended movie, its genres, a score breakdown from the 
 
 ## Model Architecture
 
-Collaborative Filtering: Matrix factorization of the user-item interaction matrix.
-Content-Based Filtering: Cosine similarity on movie features (genres, tags, etc.).
-Neural Collaborative Filtering (NCF):
-  User and item embeddings
-  Multi-layer Perceptron (MLP) for interaction modeling
-  Output: Predicted rating or probability of user-item interaction
+Neural Collaborative Filtering (NCF)
+```
+User Input (6040)    Item Input (3706)
+       ↓                    ↓
+   Embedding (64)      Embedding (64)
+       ↓                    ↓
+       ├──────── GMF ───────┤  (Element-wise product)
+       │                    │
+       └──────── MLP ───────┘  (Concat → Dense[128,64,32] + BatchNorm + Dropout)
+                  ↓
+              Concatenate
+                  ↓
+              Dense(1)  → Predicted Rating
+```
+Key Components:
+
+GMF Path: Captures linear user-item interactions via element-wise multiplication
+MLP Path: Models complex non-linear patterns with 3 hidden layers
+Regularization: L2 regularization (1e-6) + Dropout [0.2, 0.2, 0.2]
+Optimization: Adam optimizer with learning rate schedule (0.001 → 0.0005)
+
+Content Embeddings
+```
+Movie Metadata (Title + Genres + Overview)
+              ↓
+     ┌─────────────────┐
+     │     TF-IDF      │  max_features=2048, ngrams=(1,2)
+     │  (2048 dims)    │
+     └─────────────────┘
+              ↓
+     ┌─────────────────┐
+     │ Sentence-BERT   │  Model: all-MiniLM-L6-v2
+     │   (384 dims)    │
+     └─────────────────┘
+              ↓
+         Concatenate
+              ↓
+    Combined Embedding (2432 dims)
+```
+Design Rationale:
+
+TF-IDF captures keyword-level similarity (genre overlap)
+SBERT captures semantic similarity (plot themes)
+Concatenation provides rich representation for content-based retrieval
+
+## Overall Architecture
+The Hybrid Movie Recommender is built as a two-stage pipeline that balances efficiency (via ANN retrieval) with accuracy (via neural ranking).
+
+┌──────────────────────────────────────────────────────────────────┐
+│                     OFFLINE TRAINING PHASE                        │
+└──────────────────────────────────────────────────────────────────┘
+                                ↓
+    ┌─────────────────────────────────────────────────────┐
+    │  1. Data Loading (MovieLens 1M)                     │
+    │     - ratings.dat → user-item interactions          │
+    │     - movies.dat → item metadata                    │
+    └─────────────────────────────────────────────────────┘
+                                ↓
+    ┌─────────────────────────────────────────────────────┐
+    │  2. Metadata Enrichment (TMDb API)                  │
+    │     - Fetch movie overviews                         │
+    │     - Fetch poster URLs                             │
+    │     - Enrich with 200x200 poster images             │
+    └─────────────────────────────────────────────────────┘
+                                ↓
+    ┌─────────────────────────────────────────────────────┐
+    │  3. Content Embedding Generation                    │
+    │     Text: title + genres + overview                 │
+    │     ├─ TF-IDF (2048 dims, bigrams)                  │
+    │     └─ Sentence-BERT (384 dims)                     │
+    │     → Combined: 2432-dimensional vectors            │
+    └─────────────────────────────────────────────────────┘
+                                ↓
+    ┌─────────────────────────────────────────────────────┐
+    │  4. NCF Model Training                              │
+    │     Architecture: GMF + MLP                         │
+    │     - User embeddings (6040 users → 64 dims)        │
+    │     - Item embeddings (3706 items → 64 dims)        │
+    │     - Training: 80/20 split, Early Stopping         │
+    │     - Output: Trained model (.keras)                │
+    └─────────────────────────────────────────────────────┘
+                                ↓
+    ┌─────────────────────────────────────────────────────┐
+    │  5. User History Extraction                         │
+    │     - Filter ratings ≥ 4 (positive feedback)        │
+    │     - Build user → [liked_movie_ids] mapping        │
+    └─────────────────────────────────────────────────────┘
+                                ↓
+    ┌─────────────────────────────────────────────────────┐
+    │  6. Artifact Generation                             │
+    │     ├─ embeddings/content_emb.npy                   │
+    │     ├─ models/ncf_model.keras                       │
+    │     ├─ data/enriched_movies.csv                     │
+    │     ├─ data/id_maps.json                            │
+    │     └─ data/user_history.json                       │
+    └─────────────────────────────────────────────────────┘
+
+
+┌──────────────────────────────────────────────────────────────────┐
+│                     ONLINE INFERENCE PHASE                        │
+└──────────────────────────────────────────────────────────────────┘
+    User Request: recommend(user_id=6, n=10)
+                        ↓
+    ┌─────────────────────────────────────────────────────┐
+    │  STAGE 1: Candidate Retrieval (Content-Based)       │
+    │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+    │  Input: user_id                                     │
+    │  ├─ Lookup user history: [movie_10, movie_20, ...]  │
+    │  ├─ Average liked movie embeddings → user_profile   │
+    │  ├─ ANN search (FAISS/sklearn cosine similarity)    │
+    │  └─ Retrieve top-500 similar items                  │
+    │                                                      │
+    │  Cold Start Handling:                               │
+    │  If user has no history → return top-K popular      │
+    │                                                      │
+    │  Complexity: O(log N) with FAISS index              │
+    └─────────────────────────────────────────────────────┘
+                        ↓
+              [500 candidate movies]
+                        ↓
+    ┌─────────────────────────────────────────────────────┐
+    │  STAGE 2: Hybrid Ranking (NCF + Content)            │
+    │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+    │  For each candidate:                                │
+    │                                                      │
+    │  1. NCF Score (Collaborative Signal)                │
+    │     Input: (user_id, movie_id)                      │
+    │     Output: Predicted rating [0-5]                  │
+    │     Normalize: ncf_score = (pred - min) / (max-min) │
+    │                                                      │
+    │  2. Content Score (Semantic Similarity)             │
+    │     Compute: cosine_sim(user_profile, candidate)    │
+    │     Average similarity across all liked movies      │
+    │     Normalize: content_score ∈ [0, 1]               │
+    │                                                      │
+    │  3. Hybrid Score (Weighted Blend)                   │
+    │     hybrid = α * ncf + (1-α) * content              │
+    │     Default α = 0.7 (favor collaborative)           │
+    │                                                      │
+    │  4. Sort by hybrid_score (descending)               │
+    │  5. Return top-N with score breakdown               │
+    │                                                      │
+    │  Complexity: O(K) where K=500 candidates            │
+    └─────────────────────────────────────────────────────┘
+                        ↓
+    ┌─────────────────────────────────────────────────────┐
+    │  Output: Top-N Recommendations                      │
+    │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+    │  [                                                   │
+    │    {                                                 │
+    │      movie_id: 123,                                 │
+    │      title: "The Matrix",                           │
+    │      hybrid_score: 0.847,                           │
+    │      ncf_score: 0.892,                              │
+    │      content_score: 0.745                           │
+    │    },                                                │
+    │    ...                                               │
+    │  ]                                                   │
+    └─────────────────────────────────────────────────────┘
+
+    
