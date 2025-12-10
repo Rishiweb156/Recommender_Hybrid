@@ -1,0 +1,13 @@
+numpy
+pandas
+scikit-learn
+scipy
+matplotlib
+tensorflow>=2.10
+sentence-transformers
+streamlit
+pyyaml
+pytest
+faiss-cpu  # optional; remove if incompatible
+#hnswlib    # optional
+requests

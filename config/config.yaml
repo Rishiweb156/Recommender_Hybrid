@@ -1,0 +1,38 @@
+# config/config.yaml
+# Central configuration for the recommender system pipeline.
+
+experiment:
+  dataset: "ml-1m"          # "ml-100k" or "ml-1m"
+  val_split: 0.1            # Fraction of data for validation/testing
+  use_sbert: True           # Whether to use S-BERT for richer content embeddings
+  use_tmdb_enrichment: True # Fetch posters and overviews from TMDB (requires TMDB_API_KEY)
+  alpha_blend: 0.7          # Weight for NCF score in the hybrid blend (0=content-only, 1=ncf-only)
+
+paths:
+  data_dir: "data"
+  artifacts_dir: "artifacts"
+  # Paths are dynamically generated based on the dataset to keep artifacts separate
+  models_dir: "artifacts/{dataset}_models"
+  embeddings_cache: "artifacts/{dataset}_content_emb.npy"
+  enriched_data_cache: "artifacts/{dataset}_movies_df_enriched.csv"
+  id_maps_path: "artifacts/{dataset}_id_maps.json"
+  user_history_path: "artifacts/{dataset}_user_history.json"
+
+# Neural Collaborative Filtering (NCF) Model
+ncf:
+  embedding_dim: 256            # Increased embedding size
+  mlp_layers: [512, 256, 128]  # Larger MLP layers
+  dropout_rates: [0.4, 0.3, 0.2] # Stronger dropout for regularization
+  l2_reg: 1e-5
+  use_gmf: true
+  use_mlp: true
+  learning_rate: 0.001          # Start LR
+  epochs: 50                    # Train longer
+  batch_size: 1024
+
+# Content-Based Filtering
+content:
+  max_tfidf_features: 2048
+  sbert_model: "all-MiniLM-L6-v2"
+
+ 
