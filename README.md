@@ -206,11 +206,12 @@ Concatenation provides rich representation for content-based retrieval
 
 ## Overall Architecture
 The Hybrid Movie Recommender is built as a two-stage pipeline that balances efficiency (via ANN retrieval) with accuracy (via neural ranking).
-
+```
 ┌──────────────────────────────────────────────────────────────────┐
 │                     OFFLINE TRAINING PHASE                        │
+
 └──────────────────────────────────────────────────────────────────┘
-                                ↓
+                                ↓ 
     ┌─────────────────────────────────────────────────────┐
     │  1. Data Loading (MovieLens 1M)                     │
     │     - ratings.dat → user-item interactions          │
@@ -318,5 +319,5 @@ The Hybrid Movie Recommender is built as a two-stage pipeline that balances effi
     │    ...                                               │
     │  ]                                                   │
     └─────────────────────────────────────────────────────┘
-
+```
     
